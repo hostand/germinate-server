@@ -20,8 +20,8 @@ apply plugin: 'com.bmuschko.cargo-base'
 
 compileJava.options.encoding = 'UTF-8'
 
-group 'uk.ac.hutton.germinate'
-version '4.8.4'
+group = 'uk.ac.hutton.germinate'
+version = '4.8.4'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_21
@@ -29,13 +29,13 @@ java {
 
 repositories {
     maven {
-        url 'https://nexus.geomatys.com/repository/geotoolkit/'
+        url = 'https://nexus.geomatys.com/repository/geotoolkit/'
     }
     maven {
-        url 'https://repo.osgeo.org/repository/release/'
+        url = 'https://repo.osgeo.org/repository/release/'
     }
     maven {
-        url 'https://maven.scijava.org/content/repositories/public/'
+        url = 'https://maven.scijava.org/content/repositories/public/'
     }
     mavenCentral()
 }
