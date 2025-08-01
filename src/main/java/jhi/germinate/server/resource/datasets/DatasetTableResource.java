@@ -1,5 +1,6 @@
 package jhi.germinate.server.resource.datasets;
 
+import jakarta.ws.rs.Path;
 import jhi.gatekeeper.resource.PaginatedResult;
 import jhi.germinate.resource.*;
 import jhi.germinate.resource.enums.*;
@@ -14,6 +15,7 @@ import jakarta.annotation.security.PermitAll;
 import jakarta.servlet.http.*;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
+
 import java.sql.*;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -45,21 +47,21 @@ public class DatasetTableResource extends BaseDatasetTableResource
 	}
 
 	public static List<Integer> getDatasetIdsForUser(HttpServletRequest req, AuthenticationFilter.UserDetails userDetails, String datasetType, boolean checkIfLicenseAccepted)
-		throws SQLException
+			throws SQLException
 	{
 		return getDatasetsForUser(req, userDetails, datasetType, checkIfLicenseAccepted).stream()
-																							  .map(ViewTableDatasets::getDatasetId)
-																							  .collect(Collectors.toList());
+																						.map(ViewTableDatasets::getDatasetId)
+																						.collect(Collectors.toList());
 	}
 
 	public static List<ViewTableDatasets> getDatasetsForUser(HttpServletRequest req, AuthenticationFilter.UserDetails userDetails, String datasetType)
-		throws SQLException
+			throws SQLException
 	{
 		return getDatasetsForUser(req, userDetails, datasetType, true);
 	}
 
 	public static List<ViewTableDatasets> getDatasetsForUser(HttpServletRequest req, AuthenticationFilter.UserDetails userDetails, String datasetType, boolean checkIfLicenseAccepted)
-		throws SQLException
+			throws SQLException
 	{
 		try (Connection conn = Database.getConnection())
 		{
@@ -90,7 +92,7 @@ public class DatasetTableResource extends BaseDatasetTableResource
 	}
 
 	public static ViewTableDatasets getDatasetForId(Integer datasetId, HttpServletRequest req, AuthenticationFilter.UserDetails userDetails, boolean checkIfLicenseAccepted)
-		throws SQLException
+			throws SQLException
 	{
 		try (Connection conn = Database.getConnection())
 		{
@@ -247,7 +249,7 @@ public class DatasetTableResource extends BaseDatasetTableResource
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	public PaginatedResult<List<ViewTableDatasets>> postDatasetsTable(UnacceptedLicenseRequest request)
-		throws SQLException
+			throws SQLException
 	{
 		AdjustQuery adjuster = null;
 
@@ -278,7 +280,7 @@ public class DatasetTableResource extends BaseDatasetTableResource
 	@Consumes(MediaType.APPLICATION_JSON)
 	@Produces(MediaType.APPLICATION_JSON)
 	public PaginatedResult<List<Integer>> postDatasetTableIds(PaginatedRequest request)
-		throws SQLException
+			throws SQLException
 	{
 		return runQuery(request);
 	}

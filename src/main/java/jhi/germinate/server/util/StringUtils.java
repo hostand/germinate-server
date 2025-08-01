@@ -52,6 +52,19 @@ public class StringUtils
 	}
 
 	/**
+	 * Returns the first string if it's not {@link #isEmpty(String)} otherwise, returns second.
+	 * @param one Choice one
+	 * @param two Choice two
+	 * @return The first choice that isn't {@link #isEmpty(String)}.
+	 */
+	public static String orElse(String one, String two) {
+		if (StringUtils.isEmpty(one))
+			return two;
+		else
+			return one;
+	}
+
+	/**
 	 * Returns either the original string (if it's not empty) or an empty string (if it is)
 	 *
 	 * @param input The input to check
@@ -77,6 +90,20 @@ public class StringUtils
 			return "\"\"";
 		else
 			return input;
+	}
+
+	/**
+	 * Returns either the original string (if it's not empty) or empty double quotes (if it is)
+	 *
+	 * @param input The input to check
+	 * @return Either the original string (if it's not empty) or empty double quotes (if it is)
+	 */
+	public static String quoteOrEmptyQuotes(String input)
+	{
+		if (isEmpty(input))
+			return "\"\"";
+		else
+			return "\"" + input + "\"";
 	}
 
 	/**

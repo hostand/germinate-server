@@ -14,14 +14,15 @@ buildscript {
 plugins {
     id 'java'
     id 'war'
+    id 'org.asciidoctor.jvm.convert' version '4.0.2'
 }
 
 apply plugin: 'com.bmuschko.cargo-base'
 
 compileJava.options.encoding = 'UTF-8'
 
-group = 'uk.ac.hutton.germinate'
-version = '4.8.4'
+group 'uk.ac.hutton.germinate'
+version '4.8.8'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_21
@@ -29,10 +30,7 @@ java {
 
 repositories {
     maven {
-        url = 'https://nexus.geomatys.com/repository/geotoolkit/'
-    }
-    maven {
-        url = 'https://repo.osgeo.org/repository/release/'
+        url 'https://repo.osgeo.org/repository/release/'
     }
     maven {
         url = 'https://maven.scijava.org/content/repositories/public/'
@@ -44,20 +42,20 @@ dependencies {
     implementation fileTree(dir: 'lib', include: ['*.jar'])
 
     implementation 'commons-cli:commons-cli:1.5.0'
-    implementation 'commons-io:commons-io:2.11.0'
+    implementation 'commons-io:commons-io:2.19.0'
 
     implementation 'com.drewnoakes:metadata-extractor:2.18.0'
 
-    implementation 'org.json:json:20230227'
+    implementation 'org.json:json:20250517'
     implementation 'com.google.code.gson:gson:2.10'
 
-    implementation 'mysql:mysql-connector-java:8.0.33'
+    implementation 'com.mysql:mysql-connector-j:8.2.0'
     implementation 'org.xerial:sqlite-jdbc:3.44.0.0'
     implementation 'cisd:jhdf5:19.04.1'
     implementation 'net.coobird:thumbnailator:0.4.18'
 //    implementation 'com.zaxxer:HikariCP:4.0.3'
-    implementation 'org.jooq:jooq:3.16.18'
-    implementation 'org.dhatim:fastexcel-reader:0.14.0'
+    implementation 'org.jooq:jooq:3.20.5'
+    implementation 'org.dhatim:fastexcel-reader:0.19.0'
     implementation 'xerces:xercesImpl:2.12.2'
     implementation 'org.codehaus.castor:castor-core:1.4.1'
     implementation ('org.codehaus.castor:castor-xml:1.4.1') {
@@ -69,8 +67,9 @@ dependencies {
     implementation 'org.glassfish.jaxb:jaxb-runtime:4.0.2'
     implementation 'jakarta.xml.bind:jakarta.xml.bind-api:4.0.0'
 
-    implementation 'org.flywaydb:flyway-core:6.5.7'
-    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+    implementation 'org.flywaydb:flyway-core:10.22.0'
+    implementation 'org.flywaydb:flyway-mysql:10.22.0'
+    implementation 'com.squareup.retrofit2:retrofit:2.12.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
     implementation 'de.poiu.apron:apron:2.1.1'
 
@@ -87,9 +86,32 @@ dependencies {
 
     implementation 'net.logicsquad:nanocaptcha:1.3'
 
+    implementation 'info.picocli:picocli:4.7.7'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.7'
+
     // Disabled Swagger until we can figure out how to make it work with Jersey3 and Jakarta
     implementation 'io.swagger.core.v3:swagger-jaxrs2-jakarta:2.2.31'
     implementation 'io.swagger.core.v3:swagger-jaxrs2-servlet-initializer-jakarta:2.2.31'
+}
+
+task generateManpageAsciiDoc(type: JavaExec) {
+    dependsOn(classes)
+    group = "Documentation"
+    description = "Generate AsciiDoc manpage"
+    classpath(configurations.compileClasspath, configurations.annotationProcessor, sourceSets.main.runtimeClasspath)
+    main 'picocli.codegen.docgen.manpage.ManPageGenerator'
+    args "jhi.germinate.GerminateCommand", "--outdir=${project.layout.buildDirectory.get()}/generated-picocli-docs", "-v", "-f"
+}
+
+apply plugin: 'org.asciidoctor.jvm.convert'
+asciidoctor {
+    dependsOn(generateManpageAsciiDoc)
+    sourceDir = file("${project.layout.buildDirectory.get()}/generated-picocli-docs")
+    outputDir = file("${project.projectDir.toString()}/docs/cli")
+    logDocuments = true
+    outputOptions {
+        backends = ['html5']
+    }
 }
 
 // Generate a .jar file for the Germinate importer project
@@ -108,11 +130,13 @@ task jarForImporter (type: Jar, dependsOn: classes) {
     include '**/AuthenticationFilter**'
     include '**/AuthorizationFilter**'
     include '**/**DatasetTableResource**'
+    include '**/DataOrientation**'
     include '**/ExportResource**'
     include '**/BaseResource**'
     include '**/ContextResource**'
     include '**/IFilteredResource**'
     include '**/PropertyWatcher**'
+    include '**/GerminateCommandVersion**'
 }
 
 // Generate a .jar file that other applications can use to communicate with the API
@@ -126,6 +150,15 @@ task jarClient (type: Jar, dependsOn: classes) {
     include '**/client/**'
 }
 
+jar {
+    // Set the classpath
+    manifest {
+        attributes('Implementation-Version': version)
+        attributes('Class-Path': configurations.runtimeClasspath.files.collect { it.getName() }.join(' '))
+        attributes('Main-Class': 'jhi.germinate.GerminateCommand')
+    }
+}
+
 // Generate a .war file
 war {
     dependsOn jar, jarForImporter, jarClient
@@ -134,10 +167,11 @@ war {
     rootSpec.includeEmptyDirs = false
 
     // Include external .jar files, but exclude the Germinate client and core.
-    classpath fileTree(dir:'build/libs/', include:'*.jar', excludes: ['germinate-client.jar', 'germinate-core.jar'])
+    classpath fileTree(dir:'build/libs/', include:'*.jar', excludes: ['germinate-client-*.jar', 'germinate-core-*.jar'])
 
     // Set the classpath
     manifest {
+        attributes('Implementation-Version': version)
         attributes('Class-Path': configurations.runtimeClasspath.files.collect { it.getName() }.join(' '))
     }
 

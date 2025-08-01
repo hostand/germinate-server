@@ -10,6 +10,7 @@ import jhi.germinate.server.database.pojo.*;
 import jhi.germinate.server.resource.ResourceUtils;
 import jhi.germinate.server.util.*;
 import jhi.germinate.server.util.importer.*;
+import jhi.germinate.server.util.importer.cli.*;
 import jhi.oddjob.JobInfo;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -20,7 +21,7 @@ import java.sql.*;
 import java.util.*;
 import java.util.logging.Logger;
 
-import static jhi.germinate.server.database.codegen.tables.DataImportJobs.*;
+import static jhi.germinate.server.database.codegen.tables.DataImportJobs.DATA_IMPORT_JOBS;
 
 /**
  * @author Sebastian Raubach
@@ -28,7 +29,7 @@ import static jhi.germinate.server.database.codegen.tables.DataImportJobs.*;
 public class DataImportRunner
 {
 	public List<AsyncExportResult> importData(String uuid)
-		throws GerminateException, SQLException
+			throws GerminateException, SQLException
 	{
 		DataImportMode mode = PropertyWatcher.get(ServerProperty.DATA_IMPORT_MODE, DataImportMode.class);
 
@@ -51,21 +52,28 @@ public class DataImportRunner
 
 			// Replace the whole job details, because jOOQ will only execute the update if the job_config field changed, not fields within the JSON.
 			record.setJobConfig(new ImportJobDetails()
-				.setBaseFolder(record.getJobConfig().getBaseFolder())
-				.setDataFilename(record.getJobConfig().getDataFilename())
-				.setTargetDatasetId(record.getJobConfig().getTargetDatasetId())
-				.setDataOrientation(record.getJobConfig().getDataOrientation())
-				.setDeleteOnFail(record.getJobConfig().getDeleteOnFail())
-				.setRunType(RunType.IMPORT));
+					.setBaseFolder(record.getJobConfig().getBaseFolder())
+					.setDataFilename(record.getJobConfig().getDataFilename())
+					.setTargetDatasetId(record.getJobConfig().getTargetDatasetId())
+					.setDataOrientation(record.getJobConfig().getDataOrientation())
+					.setDeleteOnFail(record.getJobConfig().getDeleteOnFail())
+					.setRunType(RunType.IMPORT));
 			record.store();
 
 			String originalFileName = record.getOriginalFilename();
 			String extension = originalFileName.substring(originalFileName.lastIndexOf(".") + 1);
-			String importerClass = getImporterClass(record.getDatatype(), extension, record.getJobConfig().getDataOrientation());
 
 			File asyncFolder = ResourceUtils.getFromExternal(null, uuid, "async");
 
-			List<String> args = getArgs(importerClass, record.getId());
+			String[] importerArgs = getImporterClassArgs(record.getDatatype(), extension);
+			List<String> args = getArgs(importerArgs, record.getId());
+
+			if (record.getJobConfig().getDataOrientation() != null && record.getDatatype() == DataImportJobsDatatype.genotype)
+			{
+				args.add("-go");
+				args.add(record.getJobConfig().getDataOrientation().name());
+			}
+
 			JobInfo info = ApplicationListener.SCHEDULER.submit("GerminateDataImportJob", "java", args, asyncFolder.getAbsolutePath());
 
 			record.setJobId(info.getId());
@@ -89,7 +97,7 @@ public class DataImportRunner
 	}
 
 	public static List<AsyncExportResult> checkData(DataImportJobsDatatype dataType, AuthenticationFilter.UserDetails userDetails, String uuid, File templateFile, String originalFileName, boolean isUpdate, DataOrientation orientation, Integer datasetId, Integer datasetStateId)
-		throws GerminateException
+			throws GerminateException
 	{
 		if (dataType == null)
 			throw new GerminateException(Response.Status.BAD_REQUEST);
@@ -105,15 +113,13 @@ public class DataImportRunner
 
 			String extension = originalFileName.substring(originalFileName.lastIndexOf(".") + 1);
 
-			String importerClass = getImporterClass(dataType, extension, orientation);
-
 			ImportJobDetails details = new ImportJobDetails()
-				.setBaseFolder(PropertyWatcher.get(ServerProperty.DATA_DIRECTORY_EXTERNAL))
-				.setDataFilename(templateFile.getName())
-				.setDeleteOnFail(true)
-				.setTargetDatasetId(datasetId)
-				.setDataOrientation(orientation)
-				.setRunType(RunType.CHECK);
+					.setBaseFolder(PropertyWatcher.get(ServerProperty.DATA_DIRECTORY_EXTERNAL))
+					.setDataFilename(templateFile.getName())
+					.setDeleteOnFail(true)
+					.setTargetDatasetId(datasetId)
+					.setDataOrientation(orientation)
+					.setRunType(RunType.CHECK);
 
 			// Store the job information in the database
 			DataImportJobsRecord dbJob = context.newRecord(DATA_IMPORT_JOBS);
@@ -130,7 +136,14 @@ public class DataImportRunner
 				dbJob.setUserId(userDetails.getId());
 			dbJob.store();
 
-			List<String> args = getArgs(importerClass, dbJob.getId());
+			String[] importerArgs = getImporterClassArgs(dataType, extension);
+			List<String> args = getArgs(importerArgs, dbJob.getId());
+
+			if (orientation != null && dataType == DataImportJobsDatatype.genotype)
+			{
+				args.add("-go");
+				args.add(orientation.name());
+			}
 
 			JobInfo info = ApplicationListener.SCHEDULER.submit("GerminateDataImportJob", "java", args, templateFile.getParentFile().getAbsolutePath());
 
@@ -152,59 +165,70 @@ public class DataImportRunner
 		}
 	}
 
-	public static String getImporterClass(DataImportJobsDatatype dataType, String extension, DataOrientation orientation)
-		throws GerminateException
+	public static String[] getImporterClassArgs(DataImportJobsDatatype dataType, String extension)
+			throws GerminateException
 	{
 		switch (dataType)
 		{
 			case mcpd:
-				return McpdImporter.class.getCanonicalName();
+				return McpdImporterCommand.CMD_ARGS;
 			case trial:
-				return TraitDataImporter.class.getCanonicalName();
+				return TrialImporterCommand.CMD_ARGS;
 			case genotype:
 				if (Objects.equals(extension, "xlsx"))
-				{
-					if (orientation == DataOrientation.GENOTYPE_MARKER_BY_GERMPLASM)
-						return GenotypeExcelTransposedImporter.class.getCanonicalName();
-					else
-						return GenotypeExcelImporter.class.getCanonicalName();
-				}
+					return ExcelGenotypeImporterCommand.CMD_ARGS;
 				else if (Objects.equals(extension, "txt"))
-					return GenotypeFlatFileImporter.class.getCanonicalName();
+					return FlatFileGenotypeImporterCommand.CMD_ARGS;
 				else if (Objects.equals(extension, "hapmap"))
-					return GenotypeHapmapImporter.class.getCanonicalName();
+					return HapmapGenotypeImporterCommand.CMD_ARGS;
 			case pedigree:
-				return PedigreeImporter.class.getCanonicalName();
+				return PedigreeImporterCommand.CMD_ARGS;
 			case groups:
-				return GroupImporter.class.getCanonicalName();
+				return GroupImporterCommand.CMD_ARGS;
 			case climate:
-				return ClimateDataImporter.class.getCanonicalName();
+				return ClimateImporterCommand.CMD_ARGS;
 			case images:
-				return ImageImporter.class.getCanonicalName();
+				return ImageImporterCommand.CMD_ARGS;
 			case shapefile:
-				return ShapefileImporter.class.getCanonicalName();
+				return ShapefileImporterCommand.CMD_ARGS;
 			case geotiff:
-				return GeotiffImporter.class.getCanonicalName();
+				return GeotiffImporterCommand.CMD_ARGS;
 			default:
 				throw new GerminateException(Response.Status.NOT_IMPLEMENTED);
 				// TODO: Others
 		}
 	}
 
-	public static List<String> getArgs(String importerClass, Integer jobDbId)
-		throws URISyntaxException
+	public static List<String> getArgs(String[] importerClassArgs, Integer jobDbId)
+			throws URISyntaxException
 	{
 		File libFolder = ResourceUtils.getLibFolder();
+		String filename = "germinate-" + DataImportRunner.class.getPackage().getImplementationVersion() + ".jar";
+		File germinateJar = new File(libFolder, filename);
 		List<String> args = new ArrayList<>();
-		args.add("-cp");
-		args.add(libFolder.getAbsolutePath() + File.separator + "*");
-		args.add(importerClass);
-		args.add(StringUtils.orEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_SERVER)));
-		args.add(StringUtils.orEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_NAME)));
-		args.add(StringUtils.orEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_PORT)));
-		args.add(StringUtils.orEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_USERNAME)));
-		args.add(StringUtils.orEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_PASSWORD)));
-		args.add(Integer.toString(jobDbId));
+		// Select Germinate jar
+		args.add("-jar");
+		args.add(germinateJar.getAbsolutePath());
+		// Add the command selection for the importer
+		for (String importerClassArg : importerClassArgs)
+			args.add(importerClassArg);
+		// Add database parameters
+		args.add("-dbserver");
+		args.add(StringUtils.quoteOrEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_SERVER)));
+		args.add("-dbname");
+		args.add(StringUtils.quoteOrEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_NAME)));
+		args.add("-dbport");
+		args.add(StringUtils.quoteOrEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_PORT)));
+		args.add("-dbuser");
+		args.add(StringUtils.quoteOrEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_USERNAME)));
+		args.add("-dbpass");
+		args.add(StringUtils.quoteOrEmptyQuotes(PropertyWatcher.get(ServerProperty.DATABASE_PASSWORD)));
+		// Add the id
+		args.add("-jid");
+		args.add(jobDbId.toString());
+		// This is an existing db job
+		args.add("--existing-import-job");
+
 		return args;
 	}
 }
